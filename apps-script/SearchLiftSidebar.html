@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    body {
+      font: 13px/1.4 Arial, sans-serif;
+      padding: 10px 12px 16px;
+      color: #e8eaed;
+      margin: 0;
+      background: #1a1a1a;
+    }
+    h2 { font-size: 15px; margin: 0 0 8px; color: #f1f3f4; }
+    p.hint { color: #9aa0a6; margin: 0 0 12px; font-size: 12px; }
+    button {
+      width: 100%;
+      padding: 10px 12px;
+      margin: 0 0 8px;
+      border: 0;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .main { background: #3c4043; color: #fff; font-weight: bold; }
+    .main:hover { background: #5f6368; }
+    .alt { background: #2d2d2d; color: #e8eaed; }
+    .alt:hover { background: #3c4043; }
+    .ghost {
+      background: transparent;
+      border: 1px solid #5f6368;
+      color: #e8eaed;
+      width: auto;
+      padding: 4px 8px;
+      margin: 0;
+    }
+    .row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
+    .row > * { flex: 1; min-width: 0; }
+    label { display: block; font-weight: bold; margin: 10px 0 4px; font-size: 12px; color: #dadce0; }
+    select, input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 6px;
+      border: 1px solid #5f6368;
+      border-radius: 4px;
+      font-size: 12px;
+      background: #2d2d2d;
+      color: #e8eaed;
+    }
+    .pair {
+      background: #2d2d2d;
+      border: 1px solid #3c4043;
+      border-radius: 6px;
+      padding: 8px;
+      margin-bottom: 8px;
+    }
+    .pair .lab { font-size: 11px; color: #9aa0a6; margin-bottom: 4px; }
+    #msg, #homeMsg { margin-top: 8px; min-height: 18px; color: #dadce0; font-size: 12px; }
+    #msg.err { color: #f28b82; }
+    .back { margin-bottom: 10px; }
+  </style>
+</head>
+<body>
+  <div id="home">
+    <h2>Search Lift</h2>
+    <p class="hint">Фразы — только колонка A. Месяцы и Δ собирает скрипт. Новую фразу вставляйте строкой внутрь блока, не ниже ИТОГО.</p>
+    <button class="main" onclick="openLift()">Search Lift</button>
+    <button class="alt" onclick="google.script.run.showWordstatSettings()">Настройки Wordstat API</button>
+    <button class="alt" onclick="protect()">Защитить шаблон</button>
+    <div id="homeMsg"></div>
+  </div>
+
+  <div id="lift" style="display:none">
+    <button class="ghost back" onclick="showHome()">← Назад</button>
+    <h2>Search Lift</h2>
+    <p class="hint">Период — все месяцы подряд с годом. Плюсом добавьте сравнения: (первый − второй) / второй.</p>
+
+    <label>С</label>
+    <div class="row">
+      <select id="fromM"></select>
+      <select id="fromY"></select>
+    </div>
+    <label>По</label>
+    <div class="row">
+      <select id="toM"></select>
+      <select id="toY"></select>
+    </div>
+
+    <label>Сравнения Δ</label>
+    <div id="pairs"></div>
+    <button class="alt" onclick="addPair()">+ Добавить сравнение</button>
+
+    <button class="main" onclick="runLift()">Построить шапку и заполнить Wordstat</button>
+    <div id="msg"></div>
+  </div>
+
+  <script>
+    var MONTHS = [
+      ['1', 'Январь'], ['2', 'Февраль'], ['3', 'Март'], ['4', 'Апрель'],
+      ['5', 'Май'], ['6', 'Июнь'], ['7', 'Июль'], ['8', 'Август'],
+      ['9', 'Сентябрь'], ['10', 'Октябрь'], ['11', 'Ноябрь'], ['12', 'Декабрь']
+    ];
+    var YEARS = [];
+    var pairId = 0;
+
+    function fillSelect(sel, items, value) {
+      sel.innerHTML = '';
+      items.forEach(function (it) {
+        var o = document.createElement('option');
+        o.value = it[0];
+        o.textContent = it[1];
+        if (String(value) === String(it[0])) o.selected = true;
+        sel.appendChild(o);
+      });
+    }
+
+    function monthSelect(id, value) {
+      var s = document.createElement('select');
+      s.id = id;
+      fillSelect(s, MONTHS, value);
+      return s;
+    }
+
+    function yearSelect(id, value) {
+      var s = document.createElement('select');
+      s.id = id;
+      fillSelect(s, YEARS, value);
+      return s;
+    }
+
+    function addPair(aM, aY, bM, bY) {
+      pairId += 1;
+      var id = pairId;
+      var box = document.createElement('div');
+      box.className = 'pair';
+      box.dataset.id = id;
+      box.innerHTML = '<div class="lab">Пара ' + id + ' <button class="ghost" type="button" data-rm="' + id + '">удалить</button></div>';
+      var r1 = document.createElement('div');
+      r1.className = 'row';
+      var r2 = document.createElement('div');
+      r2.className = 'row';
+      r1.appendChild(monthSelect('aM' + id, aM || 7));
+      r1.appendChild(yearSelect('aY' + id, aY || (new Date().getFullYear() - 1)));
+      r2.appendChild(monthSelect('bM' + id, bM || 7));
+      r2.appendChild(yearSelect('bY' + id, bY || new Date().getFullYear()));
+      box.appendChild(r1);
+      box.appendChild(r2);
+      box.querySelector('[data-rm]').onclick = function () { box.remove(); };
+      document.getElementById('pairs').appendChild(box);
+    }
+
+    function num(id) { return Number(document.getElementById(id).value); }
+
+    function collectPairs() {
+      var nodes = document.querySelectorAll('#pairs .pair');
+      var out = [];
+      nodes.forEach(function (box) {
+        var id = box.dataset.id;
+        out.push({
+          aMonth: num('aM' + id),
+          aYear: num('aY' + id),
+          bMonth: num('bM' + id),
+          bYear: num('bY' + id)
+        });
+      });
+      return out;
+    }
+
+    function runLift() {
+      var payload = {
+        fromMonth: num('fromM'),
+        fromYear: num('fromY'),
+        toMonth: num('toM'),
+        toYear: num('toY'),
+        pairs: collectPairs()
+      };
+      var msg = document.getElementById('msg');
+      msg.className = '';
+      msg.textContent = 'Собираю шапку и запрашиваю Wordstat… Это может занять несколько минут.';
+      google.script.run
+        .withSuccessHandler(function (t) {
+          msg.className = '';
+          msg.textContent = t || 'Готово.';
+        })
+        .withFailureHandler(function (e) {
+          msg.className = 'err';
+          msg.textContent = e.message || String(e);
+        })
+        .runSearchLift(payload);
+    }
+
+    function protect() {
+      google.script.run
+        .withSuccessHandler(function (t) { document.getElementById('homeMsg').textContent = t; })
+        .withFailureHandler(function (e) { document.getElementById('homeMsg').textContent = e.message || String(e); })
+        .protectTemplate();
+    }
+
+    function openLift() {
+      document.getElementById('home').style.display = 'none';
+      document.getElementById('lift').style.display = 'block';
+    }
+    function showHome() {
+      document.getElementById('lift').style.display = 'none';
+      document.getElementById('home').style.display = 'block';
+    }
+
+    google.script.run.withSuccessHandler(function (st) {
+      YEARS = (st.years || []).map(function (y) { return [String(y), String(y)]; });
+      var lift = st.lift || {};
+      fillSelect(document.getElementById('fromM'), MONTHS, lift.fromMonth || 7);
+      fillSelect(document.getElementById('toM'), MONTHS, lift.toMonth || 7);
+      fillSelect(document.getElementById('fromY'), YEARS, lift.fromYear);
+      fillSelect(document.getElementById('toY'), YEARS, lift.toYear);
+      var pairs = lift.pairs && lift.pairs.length ? lift.pairs : [{ aMonth: 7, aYear: lift.fromYear, bMonth: 7, bYear: lift.toYear }];
+      pairs.forEach(function (p) { addPair(p.aMonth, p.aYear, p.bMonth, p.bYear); });
+      if (!st.settingsOk) {
+        document.getElementById('homeMsg').textContent = 'Сначала укажите API-ключ и Folder ID в настройках.';
+      }
+    }).getSearchLiftState();
+  </script>
+</body>
+</html>

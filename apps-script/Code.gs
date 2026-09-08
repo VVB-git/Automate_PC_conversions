@@ -29,6 +29,14 @@ function onOpen() {
         .createMenu('Аудитория')
         .addItem('Интересы из Метрики', 'showInterestsSidebar')
     )
+    .addSubMenu(
+      SpreadsheetApp.getUi()
+        .createMenu('Search Lift')
+        .addItem('Открыть панель', 'showSearchLiftSidebar')
+        .addItem('Заполнить по последним настройкам', 'fillWordstat')
+        .addItem('Настройки Wordstat API', 'showWordstatSettings')
+        .addItem('Защитить шаблон', 'protectTemplate')
+    )
     .addSeparator()
     .addToUi();
 }
