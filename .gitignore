@@ -1,0 +1,21 @@
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Secrets and local credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Google Apps Script CLI (script id and login)
+.clasp.json
+.clasprc.json
+
+# Editor / tooling
+.idea/
+.vscode/
+node_modules/
+*.log

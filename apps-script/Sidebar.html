@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <meta charset="utf-8">
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 0;
+        padding: 16px;
+        color: #202124;
+      }
+      h2 {
+        font-size: 17px;
+        margin: 0 0 6px;
+      }
+      p.hint {
+        color: #5f6368;
+        font-size: 12px;
+        line-height: 1.4;
+        margin: 0 0 14px;
+      }
+      label {
+        display: block;
+        font-size: 12px;
+        font-weight: bold;
+        margin: 10px 0 4px;
+      }
+      input, select {
+        width: 100%;
+        box-sizing: border-box;
+        border: 1px solid #dadce0;
+        border-radius: 6px;
+        padding: 8px 10px;
+        font-size: 13px;
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+      }
+      .row > div {
+        flex: 1;
+      }
+      .token-note {
+        font-size: 11px;
+        color: #137333;
+        margin-top: 4px;
+        display: none;
+      }
+      .goals {
+        max-height: 180px;
+        overflow: auto;
+        border: 1px solid #dadce0;
+        border-radius: 6px;
+        padding: 6px 8px;
+        font-size: 12px;
+        background: #fff;
+        min-height: 48px;
+      }
+      .goals label {
+        font-weight: normal;
+        margin: 0 0 6px;
+        display: flex;
+        align-items: flex-start;
+        gap: 6px;
+      }
+      .goals input {
+        width: auto;
+        margin-top: 2px;
+      }
+      .goals .empty {
+        color: #80868b;
+      }
+      button {
+        width: 100%;
+        border: none;
+        border-radius: 8px;
+        padding: 11px 14px;
+        font-size: 14px;
+        cursor: pointer;
+        margin-top: 8px;
+      }
+      button:disabled {
+        cursor: default;
+        opacity: 0.65;
+      }
+      button.primary {
+        background: #1a73e8;
+        color: #fff;
+        font-weight: bold;
+      }
+      button.secondary {
+        background: #e8f0fe;
+        color: #174ea6;
+      }
+      .bar {
+        height: 6px;
+        background: #e8eaed;
+        border-radius: 99px;
+        overflow: hidden;
+        margin: 12px 0 6px;
+      }
+      .bar > span {
+        display: block;
+        height: 100%;
+        width: 0;
+        background: #1a73e8;
+      }
+      .steps {
+        margin: 8px 0 0;
+        padding: 0;
+        list-style: none;
+      }
+      .steps li {
+        font-size: 12px;
+        color: #80868b;
+        margin: 5px 0;
+        padding-left: 16px;
+        position: relative;
+      }
+      .steps li::before {
+        content: '•';
+        position: absolute;
+        left: 2px;
+      }
+      .steps li.active {
+        color: #1a73e8;
+        font-weight: bold;
+      }
+      .steps li.done {
+        color: #137333;
+      }
+      .steps li.error {
+        color: #c5221f;
+      }
+      .msg {
+        margin-top: 10px;
+        padding: 10px 12px;
+        border-radius: 8px;
+        font-size: 12px;
+        line-height: 1.4;
+        display: none;
+        white-space: pre-wrap;
+      }
+      .msg.ok {
+        display: block;
+        background: #e6f4ea;
+        color: #137333;
+      }
+      .msg.error {
+        display: block;
+        background: #fce8e6;
+        color: #c5221f;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>Post-click из Метрики</h2>
+    <p class="hint">Данные пишутся на первый лист. Токен хранится в свойствах документа, не в ячейках.</p>
+
+    <label for="counterId">Номер счётчика</label>
+    <input id="counterId" type="text" inputmode="numeric" placeholder="12345678">
+
+    <div class="row">
+      <div>
+        <label for="date1">С</label>
+        <input id="date1" type="date">
+      </div>
+      <div>
+        <label for="date2">По</label>
+        <input id="date2" type="date">
+      </div>
+    </div>
+
+    <label for="token">OAuth-токен</label>
+    <input id="token" type="password" autocomplete="off" placeholder="y0_…">
+    <div class="token-note" id="tokenNote">Токен уже сохранён. Вставьте новый, только если нужно заменить.</div>
+
+    <label for="label">Метка «наш» трафик</label>
+    <input id="label" type="text" value="programmatic" placeholder="пусто = все источники">
+    <p class="hint" style="margin:4px 0 0">Пустое поле — конверсии по выбранным целям со всех источников, без ассоциированных.</p>
+
+    <label for="labelField">Где искать метку</label>
+    <select id="labelField">
+      <option value="utm_source">utm_source</option>
+      <option value="utm_medium">utm_medium</option>
+      <option value="utm_campaign">utm_campaign</option>
+      <option value="lastTrafficSource">lastTrafficSource</option>
+    </select>
+
+    <label>Цели</label>
+    <div class="goals" id="goals"><div class="empty">Нажмите «Загрузить цели»</div></div>
+
+    <button class="secondary" id="goalsBtn" onclick="loadGoals()">Загрузить цели</button>
+    <button class="primary" id="runBtn" onclick="runJob()">Выгрузить конверсии</button>
+
+    <div class="bar"><span id="bar"></span></div>
+    <ul class="steps" id="steps"></ul>
+    <div class="msg" id="msg"></div>
+
+    <script>
+      var pollTimer = null;
+      var loadedGoals = [];
+      var selectedGoalIds = [];
+      var STEP_ORDER = [
+        { id: 'start', title: 'Настройки' },
+        { id: 'goals', title: 'Цели' },
+        { id: 'report', title: 'Отчёт Метрики' },
+        { id: 'write', title: 'Запись в таблицу' },
+        { id: 'done', title: 'Готово' }
+      ];
+
+      function $(id) {
+        return document.getElementById(id);
+      }
+
+      function setBusy(busy) {
+        $('runBtn').disabled = busy;
+        $('goalsBtn').disabled = busy;
+      }
+
+      function showMsg(text, ok) {
+        var el = $('msg');
+        el.className = 'msg ' + (ok ? 'ok' : 'error');
+        el.textContent = text;
+      }
+
+      function clearMsg() {
+        var el = $('msg');
+        el.className = 'msg';
+        el.textContent = '';
+      }
+
+      function collectForm() {
+        var ids = [];
+        var boxes = document.querySelectorAll('#goals input[type="checkbox"]');
+        for (var i = 0; i < boxes.length; i++) {
+          if (boxes[i].checked) ids.push(boxes[i].value);
+        }
+        return {
+          counterId: $('counterId').value,
+          date1: $('date1').value,
+          date2: $('date2').value,
+          token: $('token').value,
+          label: $('label').value,
+          labelField: $('labelField').value,
+          goalIds: ids
+        };
+      }
+
+      function renderGoals(goals) {
+        loadedGoals = goals || [];
+        var box = $('goals');
+        if (!loadedGoals.length) {
+          box.innerHTML = '<div class="empty">У счётчика нет целей</div>';
+          return;
+        }
+        var html = '';
+        for (var i = 0; i < loadedGoals.length; i++) {
+          var g = loadedGoals[i];
+          var checked = selectedGoalIds.indexOf(String(g.id)) !== -1 ? ' checked' : '';
+          html += '<label><input type="checkbox" value="' + g.id + '"' + checked + '>'
+            + escapeHtml(g.name) + '</label>';
+        }
+        box.innerHTML = html;
+      }
+
+      function escapeHtml(text) {
+        return String(text)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;');
+      }
+
+      function setBar(percent) {
+        $('bar').style.width = Math.max(0, Math.min(100, percent || 0)) + '%';
+      }
+
+      function renderSteps(progress) {
+        progress = progress || {};
+        var current = progress.step || '';
+        var error = current === 'error';
+        setBar(progress.percent || 0);
+        var html = '';
+        var currentIndex = -1;
+        for (var j = 0; j < STEP_ORDER.length; j++) {
+          if (STEP_ORDER[j].id === current) currentIndex = j;
+        }
+        for (var i = 0; i < STEP_ORDER.length; i++) {
+          var cls = '';
+          if (error) {
+            cls = i === 0 ? 'error' : '';
+          } else if (current === 'done') {
+            cls = 'done';
+          } else if (STEP_ORDER[i].id === current) {
+            cls = 'active';
+          } else if (currentIndex > i) {
+            cls = 'done';
+          }
+          html += '<li class="' + cls + '">' + STEP_ORDER[i].title + '</li>';
+        }
+        if (progress.label) {
+          html += '<li class="' + (error ? 'error' : 'active') + '">' + escapeHtml(progress.label) + '</li>';
+        }
+        $('steps').innerHTML = html;
+      }
+
+      function startPoll() {
+        stopPoll();
+        pollTimer = setInterval(function() {
+          google.script.run.withSuccessHandler(renderSteps).getJobProgress();
+        }, 700);
+      }
+
+      function stopPoll() {
+        if (pollTimer) {
+          clearInterval(pollTimer);
+          pollTimer = null;
+        }
+      }
+
+      function loadGoals() {
+        clearMsg();
+        setBusy(true);
+        renderSteps({ step: 'goals', label: 'Запрашиваю список целей', percent: 10 });
+        startPoll();
+        google.script.run
+          .withSuccessHandler(function(res) {
+            stopPoll();
+            setBusy(false);
+            renderGoals(res && res.goals);
+            renderSteps({ step: 'idle', percent: 0 });
+            showMsg((res && res.message) || 'Цели загружены.', true);
+          })
+          .withFailureHandler(function(err) {
+            stopPoll();
+            setBusy(false);
+            var text = err && err.message ? err.message : String(err);
+            renderSteps({ step: 'error', label: text, percent: 0 });
+            showMsg(text, false);
+          })
+          .loadCounterGoals(collectForm());
+      }
+
+      function runJob() {
+        clearMsg();
+        setBusy(true);
+        renderSteps({ step: 'start', label: 'Проверяю настройки', percent: 5 });
+        startPoll();
+        google.script.run
+          .withSuccessHandler(function(res) {
+            stopPoll();
+            renderSteps({ step: 'done', label: 'Готово', percent: 100 });
+            setBusy(false);
+            showMsg((res && res.message) || 'Готово.', true);
+          })
+          .withFailureHandler(function(err) {
+            stopPoll();
+            setBusy(false);
+            var text = err && err.message ? err.message : String(err);
+            renderSteps({ step: 'error', label: text, percent: 0 });
+            showMsg(text, false);
+          })
+          .runPostClickJob(collectForm());
+      }
+
+      google.script.run
+        .withSuccessHandler(function(state) {
+          if (!state) return;
+          $('counterId').value = state.counterId || '';
+          $('date1').value = state.date1 || '';
+          $('date2').value = state.date2 || '';
+          $('label').value = (state.label === undefined || state.label === null)
+            ? 'programmatic'
+            : state.label;
+          $('labelField').value = state.labelField || 'utm_source';
+          selectedGoalIds = state.selectedGoalIds || [];
+          if (state.tokenSaved) {
+            $('tokenNote').style.display = 'block';
+            $('token').placeholder = 'токен сохранён';
+          }
+        })
+        .getSidebarState();
+
+      renderSteps({ step: '' });
+    </script>
+  </body>
+</html>
